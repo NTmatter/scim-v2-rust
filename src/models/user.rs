@@ -1,6 +1,8 @@
+use std::collections::HashMap;
 use std::convert::TryFrom;
 
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::models::enterprise_user::EnterpriseUser;
 use crate::models::scim_schema::Meta;
@@ -58,6 +60,8 @@ pub struct User {
     pub meta: Option<Meta>,
     #[serde(rename = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User", skip_serializing_if = "Option::is_none")]
     pub enterprise_user: Option<EnterpriseUser>,
+    #[serde(flatten, skip_serializing_if = "HashMap::is_empty")]
+    pub extensions: HashMap<String, Value>,
 }
 
 impl Default for User {
@@ -88,6 +92,7 @@ impl Default for User {
             x509_certificates: None,
             meta: None,
             enterprise_user: None,
+            extensions: HashMap::new(),
         }
     }
 }
@@ -742,5 +747,34 @@ mod tests {
         assert!(user.is_ok());
         let user = user.unwrap();
         assert!(user.enterprise_user.is_none());
+    }
+
+    #[test]
+    fn user_deserialization_with_user_extension() {
+        let json_data = r#"{
+            "schemas": ["urn:ietf:params:scim:schemas:core:2.0:User"],
+            "id": "2819c223-7f76-453a-919d-413861904646",
+            "userName": "bjensen@example.com",
+            "urn:example:testing": { "test": 42 }
+        }"#;
+
+        let user: Result<User, serde_json::Error> = serde_json::from_str(json_data);
+
+        if let Err(e) = &user {
+            eprintln!("Deserialization failed: {:?}", e);
+        }
+        assert!(user.is_ok());
+        let user = user.unwrap();
+        assert!(user
+            .extensions
+            .get("urn:example:testing")
+            .unwrap()
+            .as_object()
+            .unwrap()
+            .get("test")
+            .unwrap()
+            .as_i64()
+            .unwrap() == 42
+        );
     }
 }
